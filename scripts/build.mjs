@@ -33,6 +33,11 @@ const entries = [
     entryPoints: {
       popup: path.join(root, "src/popup/popup.ts")
     }
+  },
+  {
+    entryPoints: {
+      status: path.join(root, "src/status/status.ts")
+    }
   }
 ];
 

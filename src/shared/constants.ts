@@ -19,5 +19,8 @@ export const DEFAULT_PROGRESS: ProgressState = {
   pagesQueued: 0,
   pagesProcessed: 0,
   assetsCaptured: 0,
-  assetsBlocked: 0
+  assetsBlocked: 0,
+  failures: 0,
+  warnings: 0,
+  recentEvents: []
 };

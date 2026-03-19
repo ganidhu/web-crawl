@@ -6,11 +6,12 @@ const statusLine = document.querySelector<HTMLDivElement>("#status-line");
 const progressBar = document.querySelector<HTMLProgressElement>("#progress");
 const summary = document.querySelector<HTMLPreElement>("#summary");
 const cancelButton = document.querySelector<HTMLButtonElement>("#cancel-button");
+const statusButton = document.querySelector<HTMLButtonElement>("#status-button");
 
 void init();
 
 async function init(): Promise<void> {
-  if (!form || !statusLine || !progressBar || !summary || !cancelButton) return;
+  if (!form || !statusLine || !progressBar || !summary || !cancelButton || !statusButton) return;
 
   const { exportSettings = DEFAULT_SETTINGS, progress = DEFAULT_PROGRESS } = await chrome.storage.local.get([
     "exportSettings",
@@ -27,6 +28,10 @@ async function init(): Promise<void> {
 
   cancelButton.addEventListener("click", async () => {
     await chrome.runtime.sendMessage({ type: "CANCEL_EXPORT" });
+  });
+
+  statusButton.addEventListener("click", async () => {
+    await chrome.runtime.sendMessage({ type: "OPEN_STATUS_PAGE" });
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -77,6 +82,10 @@ function renderProgress(progress: ProgressState): void {
       pagesQueued: progress.pagesQueued,
       assetsCaptured: progress.assetsCaptured,
       assetsBlocked: progress.assetsBlocked,
+      failures: progress.failures,
+      warnings: progress.warnings,
+      startedAt: progress.startedAt,
+      completedAt: progress.completedAt,
       downloadId: progress.downloadId,
       error: progress.error
     },

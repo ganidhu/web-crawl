@@ -1,0 +1,170 @@
+:root {
+  color-scheme: light;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  color: #1a140d;
+  background:
+    radial-gradient(circle at top left, rgba(255, 181, 87, 0.25), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(31, 111, 235, 0.14), transparent 30%),
+    linear-gradient(180deg, #fef9f0, #f3ede2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.page {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 24px 48px;
+}
+
+.hero h1 {
+  margin: 8px 0 6px;
+  font-size: clamp(30px, 5vw, 52px);
+  line-height: 0.96;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #8d5b2b;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+.subcopy {
+  margin: 0;
+  max-width: 640px;
+  color: rgba(26, 20, 13, 0.7);
+}
+
+.grid {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}
+
+.card {
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(64, 44, 24, 0.1);
+  backdrop-filter: blur(10px);
+  box-shadow: rgba(62, 39, 16, 0.08) 0 22px 50px;
+}
+
+.card.primary {
+  grid-column: span 6;
+}
+
+.card:not(.primary).stat {
+  grid-column: span 3;
+}
+
+.grid > .card:nth-child(2) {
+  grid-column: span 6;
+}
+
+.controls,
+.page > .card:last-child {
+  margin-top: 16px;
+}
+
+.label {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(26, 20, 13, 0.58);
+}
+
+.value {
+  margin-top: 10px;
+  font-size: clamp(24px, 3.5vw, 38px);
+  font-weight: 700;
+}
+
+.meta,
+.mono,
+#settings,
+.event-line {
+  margin-top: 10px;
+  font-family: "SFMono-Regular", "Menlo", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mono {
+  word-break: break-word;
+}
+
+.progress-wrap {
+  margin-top: 18px;
+}
+
+progress {
+  width: 100%;
+  height: 12px;
+}
+
+.button-row {
+  display: flex;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  font: inherit;
+  font-weight: 700;
+  background: #1f6feb;
+  color: white;
+  cursor: pointer;
+}
+
+button.ghost {
+  background: rgba(26, 20, 13, 0.08);
+  color: #1a140d;
+}
+
+#settings {
+  margin-bottom: 0;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(26, 20, 13, 0.05);
+  overflow: auto;
+}
+
+.events {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.event-line {
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(26, 20, 13, 0.04);
+}
+
+.event-line.warning {
+  background: rgba(255, 187, 56, 0.12);
+}
+
+.event-line.error {
+  background: rgba(216, 80, 53, 0.12);
+}
+
+@media (max-width: 860px) {
+  .card.primary,
+  .grid > .card:nth-child(2),
+  .card:not(.primary).stat {
+    grid-column: span 12;
+  }
+}

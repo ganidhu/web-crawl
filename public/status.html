@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Export Status</title>
+    <link rel="stylesheet" href="status.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <p class="eyebrow">Design Corpus Exporter</p>
+        <h1>Live Crawl Status</h1>
+        <p class="subcopy">Track queue depth, assets, failures, and export health in real time.</p>
+      </section>
+
+      <section class="grid">
+        <article class="card primary">
+          <div class="label">Run status</div>
+          <div id="status-line" class="value">Idle</div>
+          <div id="run-meta" class="meta"></div>
+          <div class="progress-wrap">
+            <progress id="progress" max="1" value="0"></progress>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="label">Current page</div>
+          <div id="current-url" class="mono">None</div>
+        </article>
+
+        <article class="card stat">
+          <div class="label">Processed</div>
+          <div id="pages-processed" class="value">0</div>
+        </article>
+
+        <article class="card stat">
+          <div class="label">Queued</div>
+          <div id="pages-queued" class="value">0</div>
+        </article>
+
+        <article class="card stat">
+          <div class="label">Assets captured</div>
+          <div id="assets-captured" class="value">0</div>
+        </article>
+
+        <article class="card stat">
+          <div class="label">Assets blocked</div>
+          <div id="assets-blocked" class="value">0</div>
+        </article>
+
+        <article class="card stat">
+          <div class="label">Failures</div>
+          <div id="failures" class="value">0</div>
+        </article>
+
+        <article class="card stat">
+          <div class="label">Warnings</div>
+          <div id="warnings" class="value">0</div>
+        </article>
+      </section>
+
+      <section class="card controls">
+        <div class="label">Run controls</div>
+        <div class="button-row">
+          <button id="cancel-button">Cancel export</button>
+          <button id="refresh-button" class="ghost">Refresh</button>
+        </div>
+        <pre id="settings"></pre>
+      </section>
+
+      <section class="card">
+        <div class="label">Recent events</div>
+        <div id="events" class="events"></div>
+      </section>
+    </main>
+    <script type="module" src="status.js"></script>
+  </body>
+</html>

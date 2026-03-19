@@ -113,13 +113,25 @@ export interface ProgressState {
   pagesProcessed: number;
   assetsCaptured: number;
   assetsBlocked: number;
+  failures: number;
+  warnings: number;
   currentUrl?: string;
   downloadId?: number;
   error?: string;
+  startedAt?: string;
+  completedAt?: string;
+  lastHeartbeat?: string;
+  settings?: ExportSettings;
+  recentEvents: Array<{
+    at: string;
+    level: "info" | "warning" | "error";
+    message: string;
+  }>;
 }
 
 export type RuntimeMessage =
   | { type: "START_EXPORT"; payload: ExportSettings }
   | { type: "CANCEL_EXPORT" }
   | { type: "GET_PROGRESS" }
+  | { type: "OPEN_STATUS_PAGE"; payload?: { runId?: string | null } }
   | { type: "SCRAPE_PAGE"; payload: ExportSettings };
