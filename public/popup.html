@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Design Corpus Exporter</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="hero">
+        <p class="eyebrow">Design Corpus Exporter</p>
+        <h1>Capture a site into one agent-ready bundle.</h1>
+      </header>
+      <form id="export-form" class="controls">
+        <label>
+          Crawl scope
+          <select name="scope">
+            <option value="origin">Current origin</option>
+            <option value="path">Current path prefix</option>
+          </select>
+        </label>
+        <label>
+          Max depth
+          <input type="number" min="0" max="5" name="maxDepth" value="2" />
+        </label>
+        <label>
+          Max pages
+          <input type="number" min="1" max="100" name="maxPages" value="12" />
+        </label>
+        <label>
+          Max assets / page
+          <input type="number" min="10" max="400" name="maxAssetsPerPage" value="120" />
+        </label>
+        <label>
+          Screenshot mode
+          <select name="screenshotMode">
+            <option value="viewport">Viewport only</option>
+            <option value="full">Full page + viewport</option>
+          </select>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" name="autoScroll" checked />
+          Auto-scroll lazy content
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" name="captureThirdParty" checked />
+          Best-effort third-party assets
+        </label>
+        <div class="actions">
+          <button type="submit" id="start-button">Start export</button>
+          <button type="button" id="cancel-button" class="ghost">Cancel</button>
+        </div>
+      </form>
+      <section class="status">
+        <div id="status-line">Idle.</div>
+        <progress id="progress" max="1" value="0"></progress>
+        <pre id="summary"></pre>
+      </section>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
