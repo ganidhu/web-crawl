@@ -19,11 +19,28 @@ body {
 .page {
   max-width: 1120px;
   margin: 0 auto;
-  padding: 32px 24px 48px;
+  padding: 34px 24px 56px;
+}
+
+.hero {
+  display: grid;
+  gap: 10px;
+}
+
+.hero-topline {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.hero-mark {
+  width: 54px;
+  height: 54px;
+  display: block;
 }
 
 .hero h1 {
-  margin: 8px 0 6px;
+  margin: 0;
   font-size: clamp(30px, 5vw, 52px);
   line-height: 0.96;
 }
@@ -38,28 +55,32 @@ body {
 
 .subcopy {
   margin: 0;
-  max-width: 640px;
+  max-width: 620px;
+  font-size: 15px;
+  line-height: 1.5;
   color: rgba(26, 20, 13, 0.7);
 }
 
 .grid {
   display: grid;
-  gap: 16px;
-  margin-top: 24px;
+  gap: 18px;
+  margin-top: 28px;
   grid-template-columns: repeat(12, minmax(0, 1fr));
 }
 
 .card {
-  padding: 18px;
+  padding: 20px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.76);
   border: 1px solid rgba(64, 44, 24, 0.1);
   backdrop-filter: blur(10px);
-  box-shadow: rgba(62, 39, 16, 0.08) 0 22px 50px;
+  box-shadow: rgba(62, 39, 16, 0.08) 0 18px 44px;
 }
 
 .card.primary {
   grid-column: span 6;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(249, 242, 233, 0.92));
 }
 
 .card:not(.primary).stat {
@@ -72,7 +93,7 @@ body {
 
 .controls,
 .page > .card:last-child {
-  margin-top: 16px;
+  margin-top: 18px;
 }
 
 .label {
@@ -83,7 +104,7 @@ body {
 }
 
 .value {
-  margin-top: 10px;
+  margin-top: 12px;
   font-size: clamp(24px, 3.5vw, 38px);
   font-weight: 700;
 }
@@ -100,6 +121,7 @@ body {
 
 .mono {
   word-break: break-word;
+  color: rgba(26, 20, 13, 0.84);
 }
 
 .progress-wrap {
@@ -114,7 +136,7 @@ progress {
 .button-row {
   display: flex;
   gap: 12px;
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 button {
@@ -134,6 +156,7 @@ button.ghost {
 }
 
 #settings {
+  margin-top: 16px;
   margin-bottom: 0;
   padding: 14px;
   border-radius: 16px;
@@ -145,6 +168,8 @@ button.ghost {
   display: grid;
   gap: 10px;
   margin-top: 16px;
+  max-height: 480px;
+  overflow: auto;
 }
 
 .event-line {
@@ -161,10 +186,23 @@ button.ghost {
   background: rgba(216, 80, 53, 0.12);
 }
 
+.footer-credit {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: rgba(26, 20, 13, 0.45);
+}
+
 @media (max-width: 860px) {
   .card.primary,
   .grid > .card:nth-child(2),
   .card:not(.primary).stat {
     grid-column: span 12;
+  }
+
+  .hero-topline {
+    align-items: flex-start;
   }
 }

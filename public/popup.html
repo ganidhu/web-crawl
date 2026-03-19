@@ -9,44 +9,68 @@
   <body>
     <main class="app">
       <header class="hero">
-        <p class="eyebrow">Design Corpus Exporter</p>
+        <div class="brand">
+          <img src="design-corpus-logo.svg" alt="Design Corpus Exporter logo" class="brand-mark" />
+          <div class="brand-copy">
+            <p class="eyebrow">Design Corpus Exporter</p>
+            <p class="brand-note">Chromium site capture for agent-ready design bundles</p>
+          </div>
+        </div>
         <h1>Capture a site into one agent-ready bundle.</h1>
       </header>
       <form id="export-form" class="controls">
-        <label>
-          Crawl scope
-          <select name="scope">
-            <option value="origin">Current origin</option>
-            <option value="path">Current path prefix</option>
-          </select>
-        </label>
-        <label>
-          Max depth
-          <input type="number" min="0" max="5" name="maxDepth" value="2" />
-        </label>
-        <label>
-          Max pages
-          <input type="number" min="1" max="100" name="maxPages" value="12" />
-        </label>
-        <label>
-          Max assets / page
-          <input type="number" min="10" max="400" name="maxAssetsPerPage" value="120" />
-        </label>
-        <label>
-          Screenshot mode
-          <select name="screenshotMode">
-            <option value="viewport">Viewport only</option>
-            <option value="full">Full page + viewport</option>
-          </select>
-        </label>
-        <label class="checkbox">
-          <input type="checkbox" name="autoScroll" checked />
-          Auto-scroll lazy content
-        </label>
-        <label class="checkbox">
-          <input type="checkbox" name="captureThirdParty" checked />
-          Best-effort third-party assets
-        </label>
+        <section class="control-group">
+          <p class="group-label">Crawl plan</p>
+          <div class="field-grid">
+            <label>
+              Crawl scope
+              <select name="scope">
+                <option value="origin">Current origin</option>
+                <option value="path">Current path prefix</option>
+              </select>
+            </label>
+            <label>
+              Screenshot mode
+              <select name="screenshotMode">
+                <option value="viewport">Viewport only</option>
+                <option value="full">Full page + viewport</option>
+              </select>
+            </label>
+            <label>
+              Max depth
+              <input type="number" min="0" max="5" name="maxDepth" value="2" />
+            </label>
+            <label>
+              Max pages
+              <input type="number" min="1" max="100" name="maxPages" value="12" />
+            </label>
+            <label class="span-2">
+              Max assets / page
+              <input type="number" min="10" max="400" name="maxAssetsPerPage" value="120" />
+            </label>
+          </div>
+        </section>
+
+        <section class="control-group">
+          <p class="group-label">Capture behavior</p>
+          <div class="toggle-grid">
+            <label class="checkbox card-option">
+              <input type="checkbox" name="autoScroll" checked />
+              <span>
+                <strong>Auto-scroll lazy content</strong>
+                <small>Trigger images and deferred sections before capture.</small>
+              </span>
+            </label>
+            <label class="checkbox card-option">
+              <input type="checkbox" name="captureThirdParty" checked />
+              <span>
+                <strong>Best-effort third-party assets</strong>
+                <small>Attempt fonts, media, and CDN files when the browser allows it.</small>
+              </span>
+            </label>
+          </div>
+        </section>
+
         <div class="actions">
           <button type="submit" id="start-button">Start export</button>
           <button type="button" id="cancel-button" class="ghost">Cancel</button>
@@ -54,10 +78,14 @@
         <button type="button" id="status-button" class="secondary">Open live dashboard</button>
       </form>
       <section class="status">
-        <div id="status-line">Idle.</div>
+        <div class="status-header">
+          <p class="group-label">Current run</p>
+          <div id="status-line">Idle.</div>
+        </div>
         <progress id="progress" max="1" value="0"></progress>
         <pre id="summary"></pre>
       </section>
+      <footer class="footer-credit">Built by Ganidhu x Baymax</footer>
     </main>
     <script type="module" src="popup.js"></script>
   </body>
