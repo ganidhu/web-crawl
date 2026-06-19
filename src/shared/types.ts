@@ -9,6 +9,7 @@ export interface ExportSettings {
   screenshotMode: ScreenshotMode;
   autoScroll: boolean;
   captureThirdParty: boolean;
+  targetUrl?: string;
 }
 
 export interface LinkRecord {
@@ -116,7 +117,9 @@ export interface ProgressState {
   failures: number;
   warnings: number;
   currentUrl?: string;
+  currentUrls?: string[];
   downloadId?: number;
+  downloadPath?: string;
   error?: string;
   startedAt?: string;
   completedAt?: string;
@@ -129,9 +132,25 @@ export interface ProgressState {
   }>;
 }
 
+export interface FailedCrawlRecord {
+  id: string;
+  runId: string;
+  name: string;
+  status: "cancelled" | "ended-early" | "fallback";
+  url: string;
+  startedAt: string;
+  completedAt: string;
+  percentAtStop: number;
+  downloadId?: number;
+  downloadPath?: string;
+}
+
 export type RuntimeMessage =
   | { type: "START_EXPORT"; payload: ExportSettings }
   | { type: "CANCEL_EXPORT" }
+  | { type: "END_EXPORT_EARLY" }
+  | { type: "SHOW_DOWNLOADED_FILE" }
+  | { type: "SHOW_DOWNLOAD_BY_ID"; payload: { downloadId: number } }
   | { type: "GET_PROGRESS" }
   | { type: "OPEN_STATUS_PAGE"; payload?: { runId?: string | null } }
   | { type: "SCRAPE_PAGE"; payload: ExportSettings };

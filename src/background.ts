@@ -3,7 +3,14 @@ import { DEFAULT_PROGRESS, DEFAULT_SETTINGS, EXPORT_VERSION } from "./shared/con
 import { assetPathForUrl } from "./shared/assets";
 import { createManifest } from "./shared/manifest";
 import { inferDesignTokens } from "./shared/tokens";
-import type { AssetRecord, ExportSettings, PageSnapshot, ProgressState, RuntimeMessage } from "./shared/types";
+import type {
+  AssetRecord,
+  ExportSettings,
+  FailedCrawlRecord,
+  PageSnapshot,
+  ProgressState,
+  RuntimeMessage
+} from "./shared/types";
 import { normalizeUrl, pageIdFromUrl, shouldVisitUrl } from "./shared/url";
 
 interface CrawlJob {
@@ -19,8 +26,12 @@ interface ActiveRun {
   windowId: number;
   startedAt: string;
   cancelled: boolean;
+  earlyFinishRequested: boolean;
   queue: CrawlJob[];
+  seen: Set<string>;
   visited: Set<string>;
+  activeTasks: number;
+  activeUrls: Set<string>;
   pages: Array<{
     id: string;
     depth: number;
@@ -34,6 +45,9 @@ let progress: ProgressState = { ...DEFAULT_PROGRESS };
 let activeRun: ActiveRun | null = null;
 const PAGE_TIMEOUT_MS = 25_000;
 const ASSET_TIMEOUT_MS = 12_000;
+const MAX_CONCURRENT_PAGES = 3;
+const MAX_CONCURRENT_ASSET_FETCHES = 6;
+let screenshotQueue = Promise.resolve();
 
 chrome.runtime.onInstalled.addListener(() => {
   void chrome.storage.local.set({ exportSettings: DEFAULT_SETTINGS, progress: DEFAULT_PROGRESS });
@@ -68,6 +82,47 @@ chrome.runtime.onMessage.addListener((message: RuntimeMessage, _sender, sendResp
     return;
   }
 
+  if (message.type === "END_EXPORT_EARLY") {
+    if (!activeRun) {
+      sendResponse({ ok: false, error: "No export is currently running." });
+      return;
+    }
+
+    const completionRatio = getCompletionRatio();
+    if (completionRatio < 0.25) {
+      sendResponse({ ok: false, error: "Early finish becomes available after 25% progress." });
+      return;
+    }
+
+    activeRun.earlyFinishRequested = true;
+    recordEvent("warning", "Early finish requested. Export will stop after the current page.");
+    updateProgress({ message: "Ending after current page...", lastHeartbeat: new Date().toISOString() });
+    sendResponse({ ok: true });
+    return;
+  }
+
+  if (message.type === "SHOW_DOWNLOADED_FILE") {
+    if (!progress.downloadId) {
+      sendResponse({ ok: false, error: "No downloaded export is available yet." });
+      return;
+    }
+    void chrome.downloads.show(progress.downloadId)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error: unknown) => {
+        sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) });
+      });
+    return true;
+  }
+
+  if (message.type === "SHOW_DOWNLOAD_BY_ID") {
+    void chrome.downloads.show(message.payload.downloadId)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error: unknown) => {
+        sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) });
+      });
+    return true;
+  }
+
   if (message.type === "START_EXPORT") {
     void startExport(message.payload)
       .then(() => sendResponse({ ok: true }))
@@ -86,11 +141,14 @@ async function startExport(settings: ExportSettings): Promise<void> {
     throw new Error("An export is already running.");
   }
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !tab.url || !tab.windowId) {
+  if (!tab?.windowId) {
     throw new Error("No active tab found.");
   }
 
-  const startUrl = normalizeUrl(tab.url);
+  const startUrl = normalizeUrl(settings.targetUrl || tab.url || "");
+  if (!startUrl) {
+    throw new Error("No target URL found.");
+  }
   const siteRootUrl = new URL(startUrl).origin;
   const runId = crypto.randomUUID();
   activeRun = {
@@ -101,8 +159,12 @@ async function startExport(settings: ExportSettings): Promise<void> {
     windowId: tab.windowId,
     startedAt: new Date().toISOString(),
     cancelled: false,
+    earlyFinishRequested: false,
     queue: [{ url: startUrl, depth: 0 }],
+    seen: new Set([startUrl]),
     visited: new Set(),
+    activeTasks: 0,
+    activeUrls: new Set(),
     pages: [],
     failures: []
   };
@@ -113,7 +175,7 @@ async function startExport(settings: ExportSettings): Promise<void> {
   updateProgress({
     runId,
     status: "running",
-    message: "Crawling site...",
+    message: "Thinking through the crawl plan...",
     pagesQueued: 1,
     pagesProcessed: 0,
     assetsCaptured: 0,
@@ -128,17 +190,20 @@ async function startExport(settings: ExportSettings): Promise<void> {
     error: undefined
   });
 
+  await delay(650);
+  updateProgress({
+    message: "Thinking through the site structure...",
+    lastHeartbeat: new Date().toISOString()
+  });
+
+  await delay(650);
+  updateProgress({
+    message: "Preparing the first capture...",
+    lastHeartbeat: new Date().toISOString()
+  });
+
   try {
-    while (activeRun && activeRun.queue.length > 0 && activeRun.pages.length < settings.maxPages) {
-      if (activeRun.cancelled) break;
-      const next = activeRun.queue.shift();
-      if (!next) continue;
-      if (activeRun.visited.has(next.url)) continue;
-      activeRun.visited.add(next.url);
-      updateProgress({ currentUrl: next.url, message: `Capturing ${next.url}`, lastHeartbeat: new Date().toISOString() });
-      recordEvent("info", `Capturing ${next.url}`);
-      await processPage(next);
-    }
+    await runConcurrentCrawl(settings.maxPages);
     if (!activeRun) return;
     await finalizeRun(activeRun);
   } finally {
@@ -146,9 +211,53 @@ async function startExport(settings: ExportSettings): Promise<void> {
   }
 }
 
+async function runConcurrentCrawl(maxPages: number): Promise<void> {
+  if (!activeRun) return;
+  const workerCount = Math.min(MAX_CONCURRENT_PAGES, maxPages);
+  await Promise.all(Array.from({ length: workerCount }, (_, index) => crawlWorker(index + 1)));
+}
+
+async function crawlWorker(workerId: number): Promise<void> {
+  while (activeRun) {
+    if (activeRun.cancelled || activeRun.earlyFinishRequested) return;
+    if (activeRun.pages.length >= activeRun.settings.maxPages) return;
+
+    const next = activeRun.queue.shift();
+    syncQueueProgress();
+    if (!next) {
+      if (activeRun.activeTasks === 0) return;
+      await delay(150);
+      continue;
+    }
+
+    if (activeRun.visited.has(next.url)) continue;
+    activeRun.visited.add(next.url);
+    activeRun.activeTasks += 1;
+    activeRun.activeUrls.add(next.url);
+    syncQueueProgress();
+
+    updateProgress({
+      currentUrl: next.url,
+      currentUrls: Array.from(activeRun.activeUrls),
+      message: `Capturing ${next.url}`,
+      lastHeartbeat: new Date().toISOString()
+    });
+    recordEvent("info", `Worker ${workerId} capturing ${next.url}`);
+
+    try {
+      await processPage(next);
+    } finally {
+      if (!activeRun) return;
+      activeRun.activeTasks = Math.max(0, activeRun.activeTasks - 1);
+      activeRun.activeUrls.delete(next.url);
+      syncQueueProgress();
+    }
+  }
+}
+
 async function processPage(job: CrawlJob): Promise<void> {
   if (!activeRun) return;
-  const tab = await chrome.tabs.create({ url: job.url, active: true, windowId: activeRun.windowId });
+  const tab = await chrome.tabs.create({ url: job.url, active: false, windowId: activeRun.windowId });
   if (!tab.id) {
     activeRun.failures.push({ url: job.url, stage: "tab-create", reason: "Tab id missing." });
     recordFailure(job.url, "tab-create", "Tab id missing.");
@@ -157,7 +266,9 @@ async function processPage(job: CrawlJob): Promise<void> {
 
   try {
     await withTimeout(waitForTabComplete(tab.id), PAGE_TIMEOUT_MS, `Timed out loading ${job.url}`);
+    await showScrapingPill(tab.id);
     await delay(900);
+    await hideScrapingPill(tab.id);
     const scrapeResponse = await sendScrapeMessage(tab.id);
     if (!scrapeResponse?.ok) {
       throw new Error(scrapeResponse?.error ?? "Content script did not respond.");
@@ -173,7 +284,7 @@ async function processPage(job: CrawlJob): Promise<void> {
       files.fullPageScreenshot = `pages/${pageId}/full-page.png`;
     }
 
-    const viewportDataUrl = await chrome.tabs.captureVisibleTab(activeRun.windowId, { format: "png" });
+    const viewportDataUrl = await capturePageScreenshot(tab.id, activeRun.windowId);
     files.viewportScreenshot = `pages/${pageId}/viewport.png`;
     const fullPageDataUrl = activeRun.settings.screenshotMode === "full" ? viewportDataUrl : undefined;
 
@@ -191,7 +302,6 @@ async function processPage(job: CrawlJob): Promise<void> {
 
     updateProgress({
       pagesProcessed: activeRun.pages.length,
-      pagesQueued: activeRun.queue.length + activeRun.pages.length,
       assetsCaptured: progress.assetsCaptured + assetResults.filter((asset) => asset.status === "captured").length,
       assetsBlocked: progress.assetsBlocked + assetResults.filter((asset) => asset.status === "blocked").length,
       message: `Captured ${snapshot.title || snapshot.url}`,
@@ -212,6 +322,7 @@ async function processPage(job: CrawlJob): Promise<void> {
   } catch (error: unknown) {
     recordFailure(job.url, "capture", error instanceof Error ? error.message : String(error));
   } finally {
+    await hideScrapingPill(tab.id).catch(() => undefined);
     await chrome.tabs.remove(tab.id).catch(() => undefined);
   }
 }
@@ -220,71 +331,35 @@ function enqueueLinks(links: string[], nextDepth: number): void {
   if (!activeRun || nextDepth > activeRun.settings.maxDepth) return;
   for (const link of links) {
     const normalized = normalizeUrl(link);
-    if (activeRun.visited.has(normalized)) continue;
+    if (activeRun.seen.has(normalized)) continue;
     if (!shouldVisitUrl(normalized, activeRun.startUrl, activeRun.settings.scope)) continue;
-    if (activeRun.queue.some((job) => job.url === normalized)) continue;
+    if (activeRun.seen.size >= activeRun.settings.maxPages) break;
+    activeRun.seen.add(normalized);
     activeRun.queue.push({ url: normalized, depth: nextDepth });
-    if (activeRun.queue.length + activeRun.pages.length >= activeRun.settings.maxPages) break;
+    syncQueueProgress();
+    if (activeRun.seen.size >= activeRun.settings.maxPages) break;
   }
 }
 
 async function captureAssets(assets: AssetRecord[], includeThirdParty: boolean): Promise<AssetRecord[]> {
-  const results: AssetRecord[] = [];
-  for (const asset of assets) {
-    if (asset.url.startsWith("blob:")) {
-      results.push({
-        ...asset,
-        status: "skipped",
-        reason: "Runtime blob URL cannot be fetched from the background worker."
-      });
-      continue;
-    }
+  const assetSlice = assets.slice(0, activeRun?.settings.maxAssetsPerPage ?? assets.length);
+  const results = new Array<AssetRecord>(assetSlice.length);
+  let cursor = 0;
 
-    if (asset.url.startsWith("data:")) {
-      results.push({
-        ...asset,
-        status: "skipped",
-        reason: "Inline data URL is already embedded in the page snapshot."
-      });
-      continue;
-    }
-
-    const url = new URL(asset.url);
-    if (!includeThirdParty && activeRun && url.origin !== activeRun.siteRootUrl) {
-      results.push({ ...asset, status: "skipped", reason: "Third-party capture disabled." });
-      continue;
-    }
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), ASSET_TIMEOUT_MS);
-      const response = await fetch(asset.url, { credentials: "include", signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (!response.ok) {
-        results.push({ ...asset, status: "blocked", reason: `HTTP ${response.status}` });
-        recordWarning(`Blocked asset ${asset.url}: HTTP ${response.status}`);
-        continue;
-      }
-      const mimeType = response.headers.get("content-type") ?? asset.mimeType;
-      const blob = await response.blob();
-      const path = assetPathForUrl(asset.url, mimeType);
-      const bytes = await blob.arrayBuffer();
-      cachedBinaryAssets.set(path, bytes);
-      results.push({
-        ...asset,
-        mimeType: mimeType ?? undefined,
-        type: asset.type,
-        status: "captured",
-        path
-      });
-    } catch (error: unknown) {
-      results.push({
-        ...asset,
-        status: "blocked",
-        reason: error instanceof Error ? error.message : String(error)
-      });
-      recordWarning(`Blocked asset ${asset.url}: ${error instanceof Error ? error.message : String(error)}`);
+  async function worker(): Promise<void> {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= assetSlice.length) return;
+      results[index] = await captureAsset(assetSlice[index], includeThirdParty);
     }
   }
+
+  const workers = Array.from(
+    { length: Math.min(MAX_CONCURRENT_ASSET_FETCHES, assetSlice.length || 1) },
+    () => worker()
+  );
+  await Promise.all(workers);
   return results;
 }
 
@@ -314,13 +389,33 @@ async function finalizeRun(run: ActiveRun): Promise<void> {
 
     updateProgress({
       status: run.cancelled ? "cancelled" : "completed",
-      message: run.cancelled ? "Cancelled. Partial export downloaded." : "Export completed.",
+      message: run.cancelled
+        ? "Cancelled. Partial export downloaded."
+        : run.earlyFinishRequested
+          ? "Ended early. Partial export downloaded."
+          : "Export completed.",
       downloadId,
+      downloadPath: await getDownloadPath(downloadId),
       currentUrl: undefined,
+      currentUrls: [],
       completedAt: new Date().toISOString(),
       lastHeartbeat: new Date().toISOString()
     });
-    recordEvent(run.cancelled ? "warning" : "info", run.cancelled ? "Partial export downloaded." : "Export completed.");
+    if (run.cancelled || run.earlyFinishRequested) {
+      await persistFailedCrawl(run, {
+        status: run.cancelled ? "cancelled" : "ended-early",
+        downloadId,
+        downloadPath: await getDownloadPath(downloadId)
+      });
+    }
+    recordEvent(
+      run.cancelled || run.earlyFinishRequested ? "warning" : "info",
+      run.cancelled
+        ? "Partial export downloaded after cancellation."
+        : run.earlyFinishRequested
+          ? "Partial export downloaded after early finish."
+          : "Export completed."
+    );
   } catch (error: unknown) {
     const reason = error instanceof Error ? error.message : String(error);
     recordEvent("warning", `Full export failed, attempting fallback export: ${reason}`);
@@ -344,13 +439,54 @@ async function finalizeRun(run: ActiveRun): Promise<void> {
       status: run.cancelled ? "cancelled" : "completed",
       message: "Fallback export completed with reduced contents.",
       downloadId: fallbackDownloadId,
+      downloadPath: await getDownloadPath(fallbackDownloadId),
       currentUrl: undefined,
+      currentUrls: [],
       completedAt: new Date().toISOString(),
       lastHeartbeat: new Date().toISOString()
+    });
+    await persistFailedCrawl(run, {
+      status: "fallback",
+      downloadId: fallbackDownloadId,
+      downloadPath: await getDownloadPath(fallbackDownloadId)
     });
     recordEvent("warning", "Fallback export downloaded without screenshots or binary assets.");
   } finally {
     cachedBinaryAssets.clear();
+  }
+}
+
+async function persistFailedCrawl(
+  run: ActiveRun,
+  input: { status: FailedCrawlRecord["status"]; downloadId?: number; downloadPath?: string }
+): Promise<void> {
+  const { failedCrawls = [] } = await chrome.storage.local.get(["failedCrawls"]);
+  const totalKnown = Math.max(run.pages.length + run.queue.length + run.activeTasks, 1);
+  const percentAtStop = Math.max(1, Math.min(100, Math.round((run.pages.length / totalKnown) * 100)));
+  const name = buildFailedCrawlName(run.startUrl);
+  const record: FailedCrawlRecord = {
+    id: crypto.randomUUID(),
+    runId: run.id,
+    name,
+    status: input.status,
+    url: run.startUrl,
+    startedAt: run.startedAt,
+    completedAt: new Date().toISOString(),
+    percentAtStop,
+    downloadId: input.downloadId,
+    downloadPath: input.downloadPath
+  };
+  const next = [record, ...(failedCrawls as FailedCrawlRecord[])].slice(0, 20);
+  await chrome.storage.local.set({ failedCrawls: next });
+}
+
+function buildFailedCrawlName(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/+$/, "");
+    return `${parsed.hostname}${path}`;
+  } catch {
+    return url;
   }
 }
 
@@ -467,6 +603,145 @@ function recordFailure(url: string, stage: string, reason: string): void {
     status: activeRun?.cancelled ? "cancelled" : "running",
     message: `Issue on ${url}`,
     error: reason
+  });
+}
+
+function getCompletionRatio(): number {
+  const totalKnown = Math.max(progress.pagesQueued, progress.pagesProcessed, 1);
+  return progress.pagesProcessed / totalKnown;
+}
+
+async function captureAsset(asset: AssetRecord, includeThirdParty: boolean): Promise<AssetRecord> {
+  if (asset.url.startsWith("blob:")) {
+    return {
+      ...asset,
+      status: "skipped",
+      reason: "Runtime blob URL cannot be fetched from the background worker."
+    };
+  }
+
+  if (asset.url.startsWith("data:")) {
+    return {
+      ...asset,
+      status: "skipped",
+      reason: "Inline data URL is already embedded in the page snapshot."
+    };
+  }
+
+  const url = new URL(asset.url);
+  if (!includeThirdParty && activeRun && url.origin !== activeRun.siteRootUrl) {
+    return { ...asset, status: "skipped", reason: "Third-party capture disabled." };
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ASSET_TIMEOUT_MS);
+    const response = await fetch(asset.url, { credentials: "include", signal: controller.signal });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      recordWarning(`Blocked asset ${asset.url}: HTTP ${response.status}`);
+      return { ...asset, status: "blocked", reason: `HTTP ${response.status}` };
+    }
+    const mimeType = response.headers.get("content-type") ?? asset.mimeType;
+    const blob = await response.blob();
+    const path = assetPathForUrl(asset.url, mimeType);
+    const bytes = await blob.arrayBuffer();
+    cachedBinaryAssets.set(path, bytes);
+    return {
+      ...asset,
+      mimeType: mimeType ?? undefined,
+      type: asset.type,
+      status: "captured",
+      path
+    };
+  } catch (error: unknown) {
+    const reason = error instanceof Error ? error.message : String(error);
+    recordWarning(`Blocked asset ${asset.url}: ${reason}`);
+    return {
+      ...asset,
+      status: "blocked",
+      reason
+    };
+  }
+}
+
+async function getDownloadPath(downloadId: number): Promise<string | undefined> {
+  const [item] = await chrome.downloads.search({ id: downloadId });
+  return item?.filename;
+}
+
+async function capturePageScreenshot(tabId: number, windowId: number): Promise<string> {
+  const run = activeRun;
+  if (!run) throw new Error("No active export run.");
+  if (run.settings.screenshotMode !== "viewport" && run.settings.screenshotMode !== "full") {
+    throw new Error("Unsupported screenshot mode.");
+  }
+
+  const previous = screenshotQueue;
+  let release!: () => void;
+  screenshotQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await previous;
+
+  try {
+    await chrome.tabs.update(tabId, { active: true });
+    await delay(220);
+    return await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+  } finally {
+    release();
+  }
+}
+
+function syncQueueProgress(): void {
+  if (!activeRun) return;
+  updateProgress({
+    pagesQueued: activeRun.queue.length + activeRun.activeTasks + activeRun.pages.length,
+    currentUrls: Array.from(activeRun.activeUrls),
+    currentUrl: Array.from(activeRun.activeUrls)[0],
+    lastHeartbeat: new Date().toISOString()
+  });
+}
+
+async function showScrapingPill(tabId: number): Promise<void> {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      const existing = document.getElementById("__design-corpus-scraping-pill");
+      if (existing) return;
+      const pill = document.createElement("div");
+      pill.id = "__design-corpus-scraping-pill";
+      pill.setAttribute("data-design-corpus-overlay", "true");
+      pill.textContent = "Scraping";
+      Object.assign(pill.style, {
+        position: "fixed",
+        left: "50%",
+        bottom: "24px",
+        transform: "translateX(-50%)",
+        zIndex: "2147483647",
+        padding: "10px 16px",
+        borderRadius: "999px",
+        background: "rgba(14, 18, 28, 0.88)",
+        color: "#f8fbff",
+        fontFamily: "Inter, system-ui, sans-serif",
+        fontSize: "13px",
+        fontWeight: "700",
+        letterSpacing: "0.04em",
+        boxShadow: "0 16px 40px rgba(6, 10, 18, 0.24)",
+        pointerEvents: "none",
+        backdropFilter: "blur(10px)"
+      } as Partial<CSSStyleDeclaration>);
+      document.documentElement.appendChild(pill);
+    }
+  });
+}
+
+async function hideScrapingPill(tabId: number): Promise<void> {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      document.getElementById("__design-corpus-scraping-pill")?.remove();
+    }
   });
 }
 
