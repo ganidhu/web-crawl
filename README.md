@@ -57,6 +57,12 @@ Build the extension:
 npm run build
 ```
 
+Run the development build in watch mode:
+
+```bash
+npm run dev
+```
+
 Run unit tests:
 
 ```bash
